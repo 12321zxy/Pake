@@ -4,6 +4,7 @@
     "active": true,
     "targets": ["dmg"],
     "macOS": {
+      "entitlements": "Entitlements.plist",
       "signingIdentity": "-"
     }
   }
