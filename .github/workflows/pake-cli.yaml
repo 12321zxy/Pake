@@ -28,6 +28,10 @@ on:
       name:
         description: "App name (lowercase for Linux)"
         required: true
+      bundleid:
+        description: "App bundle id"
+        required: false
+        default: "com.pake.xxx"
       icon:
         description: "Icon URL, auto-fetch if empty"
         required: false
@@ -110,10 +114,14 @@ jobs:
             ARGS="$ARGS --icon ${{ inputs.icon }}"
           fi
 
+          if [ -n "${{ inputs.bundleid }}" ]; then
+            ARGS="$ARGS --identifier ${{ inputs.bundleid }}"
+          fi
+          
           if [ -n "${{ inputs.width }}" ]; then
             ARGS="$ARGS --width ${{ inputs.width }}"
           fi
-
+          
           if [ -n "${{ inputs.height }}" ]; then
             ARGS="$ARGS --height ${{ inputs.height }}"
           fi
