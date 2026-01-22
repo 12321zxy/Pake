@@ -3,6 +3,7 @@ name: Build App With Pake CLI
 env:
   NODE_VERSION: "22"
   PNPM_VERSION: "10.26.2"
+  # 必须透传 Secrets 供公证使用
   APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
   APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
   APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -137,6 +138,48 @@ jobs:
           echo "Running: node dist/cli.js $ARGS"
           node dist/cli.js $ARGS
 
+      # 👇 [核心修复] 手动对 DMG 进行公证和装订 (Notarize + Staple)
+      - name: Notarize DMG (macOS fix)
+        if: runner.os == 'macOS'
+        env: 
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # 1. 查找 DMG 文件
+          # 优先找 Pake 移动到根目录的
+          DMG_NAME="${{ inputs.name }}.dmg"
+          if [ -f "$DMG_NAME" ]; then
+            DMG_PATH="$DMG_NAME"
+          else
+            # 备用方案：去 target 目录找
+            DMG_PATH=$(find src-tauri/target -name "*.dmg" -maxdepth 5 | head -n 1)
+          fi
+
+          if [ -z "$DMG_PATH" ]; then
+            echo "❌ Error: DMG file not found!"
+            exit 1
+          fi
+
+          echo "🚀 Found DMG at: $DMG_PATH"
+          echo "📝 Starting Notarization for DMG..."
+          
+          # 2. 提交公证
+          xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          
+          # 3. 装订票据
+          echo "📎 Stapling ticket to DMG..."
+          xcrun stapler staple "$DMG_PATH"
+          echo "✅ DMG Notarized and Stapled Successfully!"
+          
+          # 4. 输出路径供下一步使用
+          echo "dmg_path=$DMG_PATH" >> $GITHUB_OUTPUT
+        id: notary_dmg
+
       - name: Build App (Windows)
         if: runner.os == 'Windows'
         timeout-minutes: 25
@@ -169,12 +212,13 @@ jobs:
 
           git checkout -- src-tauri/Cargo.lock
 
+      # 👇 [修复] 上传真正经过公证的 DMG
       - name: Upload DMG (macOS)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.name }}-macOS
-          path: ${{ inputs.name }}.dmg
+          path: ${{ steps.notary_dmg.outputs.dmg_path }}
           retention-days: 3
 
       - name: Upload DEB (Linux)
